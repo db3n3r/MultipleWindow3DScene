@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multi-Window 3D - Ultimate Cinematic Flow</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #010101; }
+        canvas { display: block; }
+        #info { position: absolute; top: 10px; left: 10px; color: #444; font-family: monospace; pointer-events: none; }
+    </style>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+            }
+        }
+    </script>
+</head>
+<body>
+    <div id="info">Sincronizando janelas...</div>
+    <script type="module">
+        import * as THREE from 'three';
+
+        // ==========================================
+        // 1. GERADOR DE TEXTURA DE POEIRA
+        // ==========================================
+        function createDustTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 32; 
+            canvas.height = 32;
+            const context = canvas.getContext('2d');
+            
+            const gradient = context.createRadialGradient(16, 16, 0, 16, 16, 16);
+            gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');     
+            gradient.addColorStop(0.3, 'rgba(255, 255, 255, 0.8)'); 
+            gradient.addColorStop(0.6, 'rgba(255, 255, 255, 0.2)'); 
+            gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');           
+
+            context.fillStyle = gradient;
+            context.fillRect(0, 0, 32, 32);
+            
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        const dustTexture = createDustTexture();
+
+        // ==========================================
+        // 2. GERENCIADOR DE JANELAS (Com Certidão de Nascimento)
+        // ==========================================
+        const myId = Date.now() + "_" + Math.random().toString(36).substring(2, 8);
+        const prefix = "window_sync_";
+        const myBirth = Date.now(); // Hora exata em que esta janela foi criada
+        
+        let lastScreenX = window.screenX;
+        let lastScreenY = window.screenY;
+        let smoothVx = 0;
+        let smoothVy = 0;
+
+        function updateWindowStatus() {
+            const dx = window.screenX - lastScreenX;
+            const dy = window.screenY - lastScreenY;
+            lastScreenX = window.screenX;
+            lastScreenY = window.screenY;
+
+            smoothVx = smoothVx * 0.85 + dx * 0.15;
+            smoothVy = smoothVy * 0.85 + dy * 0.15;
+
+            const data = {
+                id: myId,
+                x: window.screenX + window.innerWidth / 2,
+                y: window.screenY + window.innerHeight / 2,
+                vx: smoothVx,
+                vy: smoothVy,
+                birth: myBirth, // Compartilha a idade da janela
+                time: Date.now()
+            };
+            localStorage.setItem(prefix + myId, JSON.stringify(data));
+        }
+
+        function getActiveWindows() {
+            let wins = [];
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key.startsWith(prefix)) {
+                    const data = JSON.parse(localStorage.getItem(key));
+                    // Tolerância aumentada para 2 segundos! Permite arrastar a janela sem desconectar.
+                    if (Date.now() - data.time < 2000) wins.push(data);
+                    else localStorage.removeItem(key);
+                }
+            }
+            wins.sort((a, b) => a.id.localeCompare(b.id)); 
+            return wins;
+        }
+
+        window.addEventListener('beforeunload', () => localStorage.removeItem(prefix + myId));
+
+        // ==========================================
+        // 3. CONFIGURAÇÃO DO THREE.JS
+        // ==========================================
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 10000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio); 
+        document.body.appendChild(renderer.domElement);
+
+        const orbs = {}; 
+
+        // --- FEIXE BIDIRECIONAL ---
+        const beamCount = 15000; 
+        const beamGeo = new THREE.BufferGeometry();
+        const beamPositions = new Float32Array(beamCount * 3);
+        const beamColors = new Float32Array(beamCount * 3);
+        const beamPhases = new Float32Array(beamCount); 
+
+        const colorGreen = new THREE.Color(0x00ff55);
+        const colorRed = new THREE.Color(0xff1100);
+
+        for(let i = 0; i < beamCount; i++) {
+            beamPhases[i] = Math.random(); 
+            const isBackwards = i >= beamCount / 2;
+            const c = isBackwards ? colorRed : colorGreen;
+            
+            beamColors[i*3] = c.r;
+            beamColors[i*3+1] = c.g;
+            beamColors[i*3+2] = c.b;
+        }
+
+        beamGeo.setAttribute('position', new THREE.BufferAttribute(beamPositions, 3));
+        beamGeo.setAttribute('color', new THREE.BufferAttribute(beamColors, 3));
+        
+        const beamMat = new THREE.PointsMaterial({ 
+            size: 5.5, 
+            map: dustTexture,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false, 
+            transparent: true,
+            opacity: 0.35, 
+            vertexColors: true
+        });
+        const beam = new THREE.Points(beamGeo, beamMat);
+        scene.add(beam);
+
+        // ==========================================
+        // 4. ANIMAÇÃO, FÍSICA E TIMELINE
+        // ==========================================
+        function updateCamera() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            const distance = (window.innerHeight / 2) / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+            camera.position.z = distance;
+            camera.position.x = window.screenX + window.innerWidth / 2;
+            camera.position.y = -(window.screenY + window.innerHeight / 2);
+        }
+
+        window.addEventListener('resize', updateCamera);
+        updateCamera();
+
+        function createOrb() {
+            const group = new THREE.Group();
+            
+            const shellGeo = new THREE.IcosahedronGeometry(130, 45); 
+            shellGeo.setAttribute('basePosition', new THREE.BufferAttribute(new Float32Array(shellGeo.attributes.position.array), 3));
+            shellGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(shellGeo.attributes.position.count * 3), 3));
+
+            const shellMat = new THREE.PointsMaterial({ 
+                size: 2.0,
+                map: dustTexture,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false,
+                transparent: true,
+                opacity: 0.8,
+                vertexColors: true
+            });
+            const shell = new THREE.Points(shellGeo, shellMat);
+            shell.userData.isCore = false;
+            group.add(shell);
+
+            const coreGeo = new THREE.IcosahedronGeometry(70, 35);
+            coreGeo.setAttribute('basePosition', new THREE.BufferAttribute(new Float32Array(coreGeo.attributes.position.array), 3));
+            coreGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(coreGeo.attributes.position.count * 3), 3));
+
+            const coreMat = new THREE.PointsMaterial({ 
+                size: 2.5, 
+                map: dustTexture,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false,
+                transparent: true,
+                opacity: 0.9,
+                vertexColors: true
+            });
+            const core = new THREE.Points(coreGeo, coreMat);
+            core.userData.isCore = true;
+            group.add(core);
+            
+            return group;
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            updateWindowStatus();
+            
+            const activeWindows = getActiveWindows();
+            const time = Date.now() * 0.001; 
+            const isConnected = activeWindows.length >= 2;
+
+            // NOVA LÓGICA DE TIMELINE (À prova de congelamento)
+            let connectionElapsed = 0;
+            if (isConnected) {
+                // Pega a data de nascimento da janela mais nova (A que abriu por último)
+                const newestBirth = Math.max(activeWindows[0].birth, activeWindows[1].birth);
+                // Calcula os segundos exatos que se passaram desde a abertura
+                connectionElapsed = (Date.now() - newestBirth) / 1000;
+            }
+
+            const beamTravelTime = 1.5; // Segundos para a poeira cruzar a tela
+            const coreBuildTime = 2.0;  // Segundos para o núcleo se formar
+            const maxT = Math.min(1.0, connectionElapsed / beamTravelTime);
+
+            for (let id in orbs) {
+                if (!activeWindows.find(w => w.id === id)) {
+                    scene.remove(orbs[id]);
+                    delete orbs[id];
+                }
+            }
+
+            activeWindows.forEach((win, index) => {
+                if (!orbs[win.id]) {
+                    const newOrb = createOrb();
+                    scene.add(newOrb);
+                    orbs[win.id] = newOrb;
+                }
+
+                const orb = orbs[win.id];
+                
+                // Mola Elástica (Inércia e Peso)
+                const targetPos = new THREE.Vector3(win.x, -win.y, 0);
+                if (!orb.userData.pos) orb.userData.pos = targetPos.clone();
+                const delta = new THREE.Vector3().subVectors(targetPos, orb.userData.pos);
+                orb.userData.pos.add(delta.clone().multiplyScalar(0.12));
+                orb.position.copy(orb.userData.pos);
+                
+                orb.rotation.y = time * 0.1; 
+
+                const isMain = (index === 0);
+                const targetShellColor = new THREE.Color(isMain ? 0x00ff55 : 0xff1100); 
+                const targetCoreColor = new THREE.Color(isMain ? 0xff1100 : 0x00ff55);  
+
+                const localCamPos = camera.position.clone();
+                orb.worldToLocal(localCamPos);
+                localCamPos.normalize();
+
+                const winVx = win.vx || 0;
+                const winVy = win.vy || 0;
+                const maxV = 80;
+                const cVx = Math.max(-maxV, Math.min(maxV, winVx));
+                const cVy = Math.max(-maxV, Math.min(maxV, winVy));
+
+                orb.children.forEach(mesh => {
+                    const positions = mesh.geometry.attributes.position;
+                    const base = mesh.geometry.attributes.basePosition;
+                    const colors = mesh.geometry.attributes.color;
+                    
+                    const isCorePart = mesh.userData.isCore;
+                    let easeProgress = 1.0;
+
+                    if (isCorePart) {
+                        if (isConnected) {
+                            let coreProgress = Math.max(0, Math.min(1.0, (connectionElapsed - beamTravelTime) / coreBuildTime));
+                            easeProgress = 1.0 - Math.pow(1.0 - coreProgress, 3); 
+                            mesh.visible = coreProgress > 0; 
+                            let safeScale = Math.max(0.001, easeProgress);
+                            mesh.scale.set(safeScale, safeScale, safeScale);
+                        } else {
+                            mesh.visible = false;
+                        }
+                    }
+
+                    const currentColor = isCorePart ? targetCoreColor : targetShellColor;
+                    
+                    for (let i = 0; i < positions.count; i++) {
+                        const bx = base.getX(i), by = base.getY(i), bz = base.getZ(i);
+                        const len = Math.sqrt(bx*bx + by*by + bz*bz);
+                        
+                        let finalX = bx, finalY = by, finalZ = bz;
+                        if (len > 0) {
+                            const nx = bx / len;
+                            const ny = by / len;
+                            const nz = bz / len;
+
+                            const breathAmp = isCorePart ? 0.2 : 0.8; 
+                            const breath = Math.sin(by * 0.04 + time * 1.5) * Math.cos(bx * 0.04 + time * 1.5) * breathAmp;
+
+                            const dotInertia = (-cVx * nx) + (cVy * ny);
+                            const deformFactor = isCorePart ? 0.15 : 0.4; 
+                            const kinetic = dotInertia * deformFactor;
+
+                            finalX = bx + nx * (breath + kinetic);
+                            finalY = by + ny * (breath + kinetic);
+                            finalZ = bz + nz * (breath + kinetic);
+
+                            finalX += -cVx * (isCorePart ? 0.1 : 0.25);
+                            finalY += cVy * (isCorePart ? 0.1 : 0.25);
+                            
+                            positions.setXYZ(i, finalX, finalY, finalZ);
+                        }
+
+                        // LÓGICA DE VÁCUO (Fresnel)
+                        const vLen = Math.sqrt(finalX*finalX + finalY*finalY + finalZ*finalZ);
+                        const fnx = finalX / vLen, fny = finalY / vLen, fnz = finalZ / vLen;
+                        const dotCam = (fnx * localCamPos.x + fny * localCamPos.y + fnz * localCamPos.z);
+                        
+                        const rimPower = isCorePart ? 6.0 : 3.5;
+                        const rimBase = isCorePart ? 0.0 : 0.05;
+
+                        let rim = Math.pow(1.0 - Math.abs(dotCam), rimPower); 
+                        rim = rimBase + (1.0 - rimBase) * rim;
+
+                        if (isCorePart) rim *= easeProgress; // Núcleo dá um fade in na opacidade enquanto nasce
+
+                        colors.setXYZ(i, currentColor.r * rim, currentColor.g * rim, currentColor.b * rim);
+                    }
+                    positions.needsUpdate = true;
+                    colors.needsUpdate = true;
+                });
+            });
+
+            // MASSIVE COSMIC RIVER (AMPULHETA + DISPARO)
+            if (isConnected) {
+                const w1 = activeWindows[0], w2 = activeWindows[1];
+                const p1 = orbs[w1.id].userData.pos.clone(); 
+                const p2 = orbs[w2.id].userData.pos.clone(); 
+
+                for(let i = 0; i < beamCount; i++) {
+                    let t = (time * 0.6 + beamPhases[i]) % 1.0;
+                    
+                    // Oculta a partícula se ela estiver "à frente" do tempo de disparo!
+                    if (t > maxT) {
+                        beamPositions[i*3] = 999999;
+                        continue;
+                    }
+
+                    const isBackwards = i >= beamCount / 2;
+                    const startPos = isBackwards ? p2 : p1;
+                    const targetPos = isBackwards ? p1 : p2;
+
+                    const startRadius = 130; 
+                    const endRadius = 70; 
+
+                    const phi = Math.acos(1 - 2 * (i / beamCount)); 
+                    const theta = Math.PI * (1 + Math.sqrt(5)) * i; 
+
+                    const startX = startPos.x + startRadius * Math.sin(phi) * Math.cos(theta);
+                    const startY = startPos.y + startRadius * Math.sin(phi) * Math.sin(theta);
+                    const startZ = startRadius * Math.cos(phi);
+
+                    const targetX = targetPos.x + endRadius * Math.sin(phi) * Math.cos(theta);
+                    const targetY = targetPos.y + endRadius * Math.sin(phi) * Math.sin(theta);
+                    const targetZ = endRadius * Math.cos(phi);
+
+                    let posX = startX + (targetX - startX) * t;
+                    let posY = startY + (targetY - startY) * t;
+                    let posZ = startZ + (targetZ - startZ) * t;
+
+                    const turbulence = Math.sin(t * Math.PI) * 35; 
+                    const angle = (time * 2.5) + (i * 0.05); 
+                    posX += Math.cos(angle) * turbulence;
+                    posY += Math.sin(angle) * turbulence;
+
+                    const axisX = startPos.x + (targetPos.x - startPos.x) * t;
+                    const axisY = startPos.y + (targetPos.y - startPos.y) * t;
+                    const pinch = 1.0 - 0.97 * Math.sin(t * Math.PI);
+
+                    let pinchedX = axisX + (posX - axisX) * pinch;
+                    let pinchedY = axisY + (posY - axisY) * pinch;
+                    let pinchedZ = (posZ) * pinch;
+
+                    const hollowRadius = 8 * Math.sin(t * Math.PI); 
+                    const distToAxis = Math.sqrt((pinchedX - axisX)**2 + (pinchedY - axisY)**2);
+
+                    if (distToAxis > 0) {
+                        const repelX = (pinchedX - axisX) / distToAxis;
+                        const repelY = (pinchedY - axisY) / distToAxis;
+
+                        posX = pinchedX + repelX * hollowRadius;
+                        posY = pinchedY + repelY * hollowRadius;
+                        posZ = pinchedZ;
+                    } else {
+                        posX = pinchedX + Math.cos(angle) * hollowRadius;
+                        posY = pinchedY + Math.sin(angle) * hollowRadius;
+                        posZ = pinchedZ;
+                    }
+
+                    beamPositions[i*3] = posX;
+                    beamPositions[i*3+1] = posY;
+                    beamPositions[i*3+2] = posZ;
+                }
+                beamGeo.attributes.position.needsUpdate = true;
+                beam.visible = true;
+            } else {
+                beam.visible = false;
+            }
+
+            renderer.render(scene, camera);
+        }
+        animate();
+    </script>
+</body>
+</html>
