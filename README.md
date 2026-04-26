@@ -1,4 +1,4 @@
-# 🌌 Multi-Window Cosmic Sync (Three.js)
+# 🌌 Sincronização multijanela (Three.js)
 
 ![Three.js](https://img.shields.io/badge/Three.js-r160-black?logo=three.js)
 ![JavaScript](https://img.shields.io/badge/JavaScript-ES6-yellow.svg)
