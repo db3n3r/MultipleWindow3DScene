@@ -110,32 +110,49 @@
         scene.add(beam);
 
         // ==========================================
-        // 4. CRIADOR DA ORBE (VOLUMÉTRICA)
+        // 4. CRIADOR DA ORBE (FIOS DE ENERGIA TIPO ESFERA.HTML)
         // ==========================================
-        function createEnergyWave(radius, detail, isCore) {
-            const geo = new THREE.IcosahedronGeometry(radius, detail);
-            geo.setAttribute('basePosition', new THREE.BufferAttribute(new Float32Array(geo.attributes.position.array), 3));
-            geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(geo.attributes.position.count * 3), 3));
+        function createEnergyThreads(radius, count, isCore) {
+            const group = new THREE.Group();
+            group.userData = { isCore, radius, threads: [] };
 
-            const mat = new THREE.PointsMaterial({
-                size: isCore ? 3.0 : 2.2, 
-                map: dustTexture,
-                blending: THREE.AdditiveBlending,
+            const material = new THREE.LineBasicMaterial({
+                color: isCore ? 0xff1100 : 0x3cff82,
                 transparent: true,
-                opacity: isCore ? 0.9 : 0.7, // Volumétrico, video tem interior ondulante
-                vertexColors: true,
-                depthWrite: false
+                opacity: isCore ? 0.9 : 0.6,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false,
             });
 
-            const points = new THREE.Points(geo, mat);
-            points.userData = { isCore, radius };
-            return points;
+            for (let i = 0; i < count; i++) {
+                const geometry = new THREE.BufferGeometry();
+                const pos = new Float32Array(25 * 3); // Histórico de rastro da linha
+                geometry.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+                
+                const line = new THREE.Line(geometry, material);
+                line.frustumCulled = false; // Como o bounding box muda muito, evitamos sumir
+                group.add(line);
+
+                group.userData.threads.push({
+                    line: line,
+                    age: 0,
+                    life: Math.random() * 150 + 50,
+                    r: radius + (Math.random() * (isCore? 4:16) - (isCore?2:8)),
+                    theta: Math.random() * Math.PI * 2,
+                    phi: Math.acos(Math.random() * 2 - 1),
+                    freq1: Math.random() * 3.5 + 1.5,
+                    freq2: Math.random() * 3.5 + 1.5,
+                    speedMultiplier: Math.random() * 0.015 + 0.005,
+                    history: []
+                });
+            }
+            return group;
         }
 
         function createOrbGroup() {
             const g = new THREE.Group();
-            g.add(createEnergyWave(130, 45, false)); // Casca Principal (Nuvem de Poeira)
-            g.add(createEnergyWave(70, 30, true));   // Núcleo (Filamentos mais densos)
+            g.add(createEnergyThreads(130, 400, false)); // Casca Principal de Energia 
+            g.add(createEnergyThreads(70, 200, true));   // Núcleo (Filamentos densos)
             return g;
         }
 
@@ -184,12 +201,11 @@
                 const localVxZ = cVx * Math.sin(-theta);
                 const localVyY = cVy;
 
-                group.children.forEach(mesh => {
-                    const base = mesh.geometry.attributes.basePosition;
-                    const pos = mesh.geometry.attributes.position;
-                    const col = mesh.geometry.attributes.color;
-                    const isCore = mesh.userData.isCore;
-                    const maxRadius = mesh.userData.radius;
+                group.children.forEach((mesh, index) => {
+                    const tGroup = group.children[index]; 
+                    if (!tGroup || !group.userData) return;
+                    // Como dividimos orbs em 2 layers, pegamos a ref salva no array `threads`
+                    const isCore = mesh.parent.children.indexOf(mesh) === 1;
 
                     let easeProgress = 1.0;
                     if(isCore) {
@@ -198,63 +214,75 @@
                         mesh.visible = connected && cp > 0;
                         mesh.scale.setScalar(Math.max(0.001, easeProgress));
                     }
+                });
 
-                    // Motor de ondas (As ondas varrem o modelo)
-                    const textureDomainSpeed = time * 0.5;
-                    const cosTexR = Math.cos(textureDomainSpeed);
-                    const sinTexR = Math.sin(textureDomainSpeed);
-                    
-                    const freq = isCore ? 0.04 : 0.025; 
-                    const t = time * 0.8; 
+                // Atualizando e desenhando fisicamente os fios de plasma igual ao esfera.html
+                [group.children[0], group.children[1]].forEach((layerGroup) => {
+                    if(!layerGroup || !layerGroup.userData || !layerGroup.userData.threads) return;
+                    const threads = layerGroup.userData.threads;
+                    const isCore = layerGroup.userData.isCore;
+                    const maxRadius = layerGroup.userData.radius;
 
-                    for(let i=0; i<base.count; i++) {
-                        let bx = base.getX(i), by = base.getY(i), bz = base.getZ(i);
+                    // Ajuste dinâmico de Cores baseado na janela (idx 0 ou 1):
+                    // Janela 0: Casca Verde (0x3cff82) e Núcleo Vermelho (0xff1100)
+                    // Janela 1: Casca Vermelha (0xff1100) e Núcleo Verde (0x3cff82)
+                    const targetColor = isCore ? (idx === 0 ? 0xff1100 : 0x3cff82) : (idx === 0 ? 0x3cff82 : 0xff1100);
+                    if (threads.length > 0) {
+                        threads[0].line.material.color.setHex(targetColor);
+                    }
+
+                    for (let t of threads) {
+                        t.age++;
+                        if (t.age > t.life) {
+                            t.age = 0;
+                            t.life = Math.random() * 150 + 50; 
+                            t.r = maxRadius + (Math.random() * (isCore?4:16) - (isCore?2:8)); 
+                            t.theta = Math.random() * Math.PI * 2;
+                            t.phi = Math.acos(Math.random() * 2 - 1);
+                            t.history = [];
+                        }
+
+                        // Algoritmo do plasma escorrendo orgânico
+                        const rTime = time * 0.3;
+                        t.theta += Math.sin(t.phi * t.freq1 + rTime) * t.speedMultiplier;
+                        t.phi += Math.cos(t.theta * t.freq2 - rTime) * t.speedMultiplier;
+
+                        if (t.phi < 0.01) t.phi = 0.01;
+                        if (t.phi > Math.PI - 0.01) t.phi = Math.PI - 0.01;
+
+                        // Cartesianas sobre a esfera
+                        let bx = t.r * Math.sin(t.phi) * Math.cos(t.theta);
+                        let by = t.r * Math.cos(t.phi);
+                        let bz = t.r * Math.sin(t.phi) * Math.sin(t.theta);
+
+                        // FÍSICA CINÉTICA (Aplica "Geleia" da Inercia da Janela ao Raio)
                         const len = Math.sqrt(bx*bx + by*by + bz*bz);
-                        
-                        let nxRaw = bx / len, nyRaw = by / len, nzRaw = bz / len; // Normais originais da esfera
-
-                        // Rotação do campo de energia (Domain Warp Caótico)
-                        const wx = bx * cosTexR - bz * sinTexR;
-                        const wy = by;
-                        const wz = bx * sinTexR + bz * cosTexR;
-                        
-                        // Cria o padrão de filamentos ondulantes em 3D
-                        let wave = Math.sin(wx * freq + t) * Math.cos(wy * freq - t) + 
-                                   Math.sin(wz * freq * 1.2 + t) * Math.cos(wx * freq * 0.8 - t);
-
-                        // Define o quanto a onda "puxa" os pontos para dentro (Criando o padrão oco/wave)
-                        let displacementForm = Math.abs(Math.sin(wave * 2.0)); 
-                        
-                        // Volume based noise: noisy internal dust opens up river path
-                        const currentRadius = maxRadius - (displacementForm * (isCore?20.0:50.0));
-
-                        let fx = nxRaw * currentRadius;
-                        let fy = nyRaw * currentRadius;
-                        let fz = nzRaw * currentRadius;
-
-                        // FÍSICA CINÉTICA (Aplica "Geleia" na orientação visual atual)
-                        const dotV = nxRaw * localVxX + nyRaw * localVyY + nzRaw * localVxZ;
+                        let nxRaw = bx/len, nyRaw = by/len, nzRaw = bz/len;
+                        const dotV = nxRaw*localVxX + nyRaw*localVyY + nzRaw*localVxZ;
                         const kinetic = (-dotV) * (isCore ? 0.15 : 0.4);
                         
-                        fx += nxRaw * kinetic - (localVxX * (isCore ? 0.1 : 0.25));
-                        fy += nyRaw * kinetic + (localVyY * (isCore ? 0.1 : 0.25));
-                        fz += nzRaw * kinetic - (localVxZ * (isCore ? 0.1 : 0.25));
+                        bx += nxRaw * kinetic - (localVxX * (isCore ? 0.1 : 0.25));
+                        by += nyRaw * kinetic + (localVyY * (isCore ? 0.1 : 0.25));
+                        bz += nzRaw * kinetic - (localVxZ * (isCore ? 0.1 : 0.25));
 
-                        pos.setXYZ(i, fx, fy, fz);
+                        t.history.push({ x: bx, y: by, z: bz });
+                        if (t.history.length > 25) t.history.shift();
 
-                        // FRESNEL (Brilho da Borda e Centro Transparente)
-                        const dotCam = (nxRaw * localCam.x + nyRaw * localCam.y + nzRaw * localCam.z);
-                        let rim = Math.pow(1 - Math.abs(dotCam), isCore ? 6 : 4); 
-                        
-                        // O brilho combina o Fresnel com o padrão de faixas
-                        let totalBrightness = rim * 0.5 + (1.0 - displacementForm) * 0.8; 
+                        // Renderiza o rastro no BufferGeometry
+                        if (t.history.length > 1) {
+                            const pos = t.line.geometry.attributes.position;
+                            for (let i = 0; i < 25; i++) {
+                                // Preenche os não utilizados com o último conhecido pra esconder falhas
+                                const pt = i < t.history.length ? t.history[i] : t.history[t.history.length - 1];
+                                pos.setXYZ(i, pt.x, pt.y, pt.z);
+                            }
+                            pos.needsUpdate = true;
 
-                        if(isCore) totalBrightness *= easeProgress;
-
-                        const c = isCore ? (idx===0?colorRed:colorGreen) : (idx===0?colorGreen:colorRed);
-                        col.setXYZ(i, c.r * totalBrightness, c.g * totalBrightness, c.b * totalBrightness);
+                            // Alpha Pulse Animation
+                            let lifePhase = Math.sin((t.age / t.life) * Math.PI); 
+                            t.line.material.opacity = (isCore ? 0.9 : 0.5) * lifePhase;
+                        }
                     }
-                    pos.needsUpdate = true; col.needsUpdate = true;
                 });
             });
 
