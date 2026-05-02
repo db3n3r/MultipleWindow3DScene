@@ -1,47 +1,55 @@
-# 🌌 Sincronização multijanela (Three.js)
+# Multiplas Janelas 3D 
 
-![Three.js](https://img.shields.io/badge/Three.js-r160-black?logo=three.js)
-![JavaScript](https://img.shields.io/badge/JavaScript-ES6-yellow.svg)
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
+[![Estrelas no GitHub](https://img.shields.io/github/stars/db3n3r/MultipleWindow3DScene?style=social)](https://github.com/db3n3r/MultipleWindow3DScene/stargazers)
 
-Um experimento visual interativo em 3D onde múltiplas janelas do navegador se conectam, compartilham coordenadas físicas na tela do sistema operacional e interagem através de um fluxo de poeira cósmica reativa.
+<div align="center">
+  <img src="https://github.com/user-attachments/assets/c9a71c53-2fda-4f39-8780-c7c2ec5c0b3b" alt="Demonstração do Projeto Multi-Janelas com Three.js" width="1200" />
+</div>
 
----
 
-## ✨ Funcionalidades (The Magic)
+<br>
+Este é um experimento interativo em WebGL utilizando **Three.js** que quebra as barreiras de uma única janela de navegador. O projeto sincroniza de forma nativa o ambiente espacial entre múltiplas janelas, criando orbes cósmicos de energia volumétrica que reagem fisicamente ao movimento do seu monitor e se conectam através de um feixe de luz quando duas janelas se encontram abertas lado a lado.
 
-* **Sincronização Cross-Window:** Utiliza a API do `localStorage` para calcular e compartilhar a posição `screenX` e `screenY` absoluta das janelas no monitor em tempo real, permitindo comunicação entre abas sem um servidor.
-* **Física Cinética (Kinetic Jelly Physics):** As orbes possuem massa e inércia virtuais. Ao arrastar a janela fisicamente, a esfera "fica para trás" e se deforma no formato de uma gota ou cometa, sendo sugada de volta para o centro por uma física de mola elástica (`Lerp`).
-* **Cinemática de Formação (Timeline):** Ao abrir uma segunda janela, o fluxo de energia viaja da orbe principal até o destino. O núcleo da segunda orbe só desperta e cresce após a poeira atingir as coordenadas de destino (1.5s de delay).
-* **Matemática de Partículas Avançada:**
-    * **Efeito Ampulheta Oca:** O fluxo de conexão aplica uma força de compressão (`pinch`) extrema no centro e um vetor de repulsão (`hollowRadius`) para criar um túnel de vácuo nítido.
-    * **Núcleos Ocos:** Tanto as esferas externas quanto os núcleos internos utilizam cálculos de Fresnel para transparência central absoluta.
+## ⭐ Apoie o Projeto
 
-## 🚀 Como executar localmente
+Se este experimento te inspirou ou ajudou nos seus estudos de renderização e manipulação de janelas no navegador, por favor, clique na **estrela (Star)** no topo da página do repositório! Isso dá visibilidade ao projeto e incentiva a criação de novas magias 3D.
 
-Como o projeto utiliza ES Modules para importar o Three.js (`type="module"`), é necessário um servidor local.
+## ✨ Características Principais
 
-### Opção 1: VS Code (Live Server)
-1. Instale a extensão **Live Server**.
-2. Clique com o botão direito no `index.html` e selecione **"Open with Live Server"**.
+* **Sincronização Multi-Janelas (Multi-Window Sync):** Utiliza as coordenadas globais da tela (`window.screenX/Y`) e o `localStorage` para rastrear posições de diferentes janelas abertas simultaneamente.
+* **Física e Inércia Reativas:** Mover ou sacudir a janela do navegador aplica forças cinéticas (modelo de molas) nas orbes, deformando os rastros de plasma em tempo real baseando-se na inércia vetorial.
+* **Renderização Volumétrica Complexa:** 
+  * Orbes compostas por camadas de energia (Núcleo denso e Casca extrínseca).
+  * Geometria dinâmica e rastros históricos limitados que geram efeito de vida "orgânica" ou plasma correndo sobre uma fronteira constrita.
+  * Lógica avançada de visibilidade (View Culling / Dot Product): Os filamentos da casca desaparecem de forma perfeitamente cilíndrica e translúcida apenas na linha de visão da câmera em relação ao núcleo, impedindo que o brilho exterior oculte o centro independente da rotação.
+* **Conexão Interdimensional (Feixe):** Quando duas janelas se detectam (numa tolerância temporal rigorosa), um túnel de partículas (Ampulheta) é ativado, conectando as coordenadas espaciais das janelas físicas reais no seu monitor.
+* **Post-Processing (Bloom):** Efeitos intensos de neon via `UnrealBloomPass` atrelados à mistura de cor aditiva (`AdditiveBlending`), criando iluminação incandescente real.
 
-### Opção 2: Node.js
-```bash
-npx http-server 
-```
+## 🚀 Como Executar
 
-## 🧠 Lógica Técnica
+Por utilizar [Módulos ES (ESM)](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Modules) para carregar o pacote do Three.js via CDN (unpkg), você não precisa usar NPM ou Webpack, mas **é obrigatório rodar em um servidor local** por conta das políticas do [CORS](https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS).
 
-Resiliência de Arraste: O sistema utiliza birthTimestamp para manter a linha do tempo sincronizada mesmo que o navegador "congele" o JavaScript temporariamente durante o arraste da janela pelo SO.
+1. Clone o repositório.
+2. Inicie um servidor local na pasta do projeto. 
+   - *Via Extensão do VS Code:* Instale o **Live Server** e clique em "Go Live".
+   - *Via Python:* `python -m http.server`
+   - *Via Node.js:* `npx serve` ou `npx http-server`
+3. Abra a aba fornecida pelo servidor (por exemplo, `http://localhost:5500/index.html`).
+4. **O Segredo:** Redimensione a aba do navegador nativo para um quadrado (ex: 800x800) e **duplique a janela** (`Ctrl+N` / no Chrome clicar e arrastar a barra). Posicione as duas janelas lado a lado no seu monitor.
 
-Física de Mola: A esfera não está presa ao centro; ela persegue o centro da tela usando interpolação linear, criando um efeito elástico natural.
+## 🧠 Como Funciona a Matemática e Física
 
-Otimização: Renderização eficiente de milhares de partículas usando BufferGeometry e PointsMaterial com AdditiveBlending.
+- **Coordenadas de Tela:** O código lê nativamente a API da janela para derivar para onde o monitor olharia.
+- **Armazenamento Temporal:** Cada janela salva seu UUID de inércia via `localStorage`, avisando todas as outras janelas presentes no mesmo domínio que ela existe e apontando seu vetor. Janelas mortas são destruídas (Garbage Collection de LocalStorage) após 2000ms.
+- **Cinemática:** Usa um misto de coordenadas cartesianas limitadas a raios variáveis ($bx, by, bz$) guiadas pelo arrasto de inércia $time$ multiplicado pela janela, o que gera um rastro flutuante nos arrays $Float32$.
+- **Transparência Direcional:** Por conta do `AdditiveBlending`, os lados frontais e traseiros da esfera corrompiam a nitidez do núcleo. Implementamos trigonometria profunda (produto escalar de view vectors e Pitágoras 3D) abrindo o miolo virtual independentemente do ângulo de oscilação do objeto instanciado.
 
-## 🛠️ Tecnologias
-- Three.js
-- JavaScript (Vanilla)
-- LocalStorage API
+## 🛠 Tecnologias Utilizadas
 
-## 📄 Licença
-Distribuído sob a licença MIT.
+* **HTML5 / CSS3 / Vanilla JS (ES11+)**
+* **Three.js (v0.160.0)**
+  * `PerspectiveCamera`, `BufferGeometry`, `Line`, `Points`
+  * `EffectComposer`, `UnrealBloomPass`, `RenderPass`
+
+## 📝 Licença
+Sinta-se à vontade para utilizar para estudo, portfólios ou fork. Modifique com moderação e divirta-se experimentando novas instâncias quânticas pelas abas do seu browser!
