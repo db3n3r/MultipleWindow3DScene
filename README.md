@@ -3,7 +3,7 @@
 [![Estrelas no GitHub](https://img.shields.io/github/stars/db3n3r/MultipleWindow3DScene?style=social)](https://github.com/db3n3r/MultipleWindow3DScene/stargazers)
 
 <div align="center">
-  <img src="https://github.com/user-attachments/assets/c9a71c53-2fda-4f39-8780-c7c2ec5c0b3b" alt="Demonstração do Projeto Multi-Janelas com Three.js" width="1200" />
+  <img src="https://github.com/user-attachments/assets/219bca0e-353f-4313-86f7-807b2a0774c9" alt="Demonstração do Projeto Multi-Janelas com Three.js" width="1200" />
 </div>
 
 
