@@ -3,11 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Multi-Window 3D - Volumetric Cosmic Orb (Replica)</title>
+    <title>Multi-Window 3D - Two Spherical Earths Siphoning Particles</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #010101; }
+        body { margin: 0; overflow: hidden; background-color: #000000; }
         canvas { display: block; }
-        #info { position: absolute; top: 10px; left: 10px; color: #444; font-family: monospace; pointer-events: none; }
     </style>
     <script type="importmap">
         {
@@ -19,56 +18,59 @@
     </script>
 </head>
 <body>
-    <div id="info">Sincronizando janelas...</div>
     <script type="module">
         import * as THREE from 'three';
         import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
         import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
         import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 
-        // ==========================================
-        // 1. TEXTURA DE POEIRA
-        // ==========================================
+        // ── Textura suave (glow) para cada partícula ───────────────────────
         function createDustTexture() {
-            const canvas = document.createElement('canvas');
-            canvas.width = 32; canvas.height = 32;
-            const context = canvas.getContext('2d');
-            const grad = context.createRadialGradient(16, 16, 0, 16, 16, 16);
-            grad.addColorStop(0, 'rgba(255, 255, 255, 1)');
-            grad.addColorStop(0.3, 'rgba(255, 255, 255, 0.8)');
-            grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
-            context.fillStyle = grad;
-            context.fillRect(0, 0, 32, 32);
-            return new THREE.CanvasTexture(canvas);
+            const c = document.createElement('canvas');
+            c.width = c.height = 32;
+            const ctx = c.getContext('2d');
+            const g = ctx.createRadialGradient(16,16,0,16,16,16);
+            g.addColorStop(0,   'rgba(255,255,255,1)');
+            g.addColorStop(0.3, 'rgba(255,255,255,0.85)');
+            g.addColorStop(1,   'rgba(0,0,0,0)');
+            ctx.fillStyle = g;
+            ctx.fillRect(0,0,32,32);
+            return new THREE.CanvasTexture(c);
         }
         const dustTexture = createDustTexture();
 
-        // ==========================================
-        // 2. SINCRONIA E INÉRCIA DE JANELA
-        // ==========================================
-        const myId = Date.now() + "_" + Math.random().toString(36).substring(2, 8);
-        const prefix = "window_sync_";
+        // Cores dos dois mundos (verde-esmeralda e laranja-fogo), como no vídeo
+        const COLORS = [0x35c27a, 0xff5a2c];
+
+        // ── SINCRONIZAÇÃO ENTRE JANELAS (localStorage) ─────────────────────
+        const myId    = Date.now() + "_" + Math.random().toString(36).substring(2,8);
+        const prefix  = "window_sync_";
         const myBirth = Date.now();
         let lastX = window.screenX, lastY = window.screenY, svx = 0, svy = 0;
 
         function updateStatus() {
             const dx = window.screenX - lastX, dy = window.screenY - lastY;
             lastX = window.screenX; lastY = window.screenY;
-            svx = svx * 0.85 + dx * 0.15; svy = svy * 0.85 + dy * 0.15;
+            svx = svx*0.85 + dx*0.15;
+            svy = svy*0.85 + dy*0.15;
             localStorage.setItem(prefix + myId, JSON.stringify({
-                id: myId, x: window.screenX + window.innerWidth/2, y: window.screenY + window.innerHeight/2,
+                id: myId,
+                x: window.screenX + window.innerWidth/2,
+                y: window.screenY + window.innerHeight/2,
                 vx: svx, vy: svy, birth: myBirth, time: Date.now()
             }));
         }
 
         function getWins() {
-            let wins = [];
+            const wins = [];
             for (let i = 0; i < localStorage.length; i++) {
                 const k = localStorage.key(i);
-                if (k.startsWith(prefix)) {
-                    const d = JSON.parse(localStorage.getItem(k));
-                    if (Date.now() - d.time < 2000) wins.push(d);
-                    else localStorage.removeItem(k);
+                if (k && k.startsWith(prefix)) {
+                    try {
+                        const d = JSON.parse(localStorage.getItem(k));
+                        if (Date.now() - d.time < 2000) wins.push(d);
+                        else localStorage.removeItem(k);
+                    } catch(e) { localStorage.removeItem(k); }
                 }
             }
             return wins.sort((a,b) => a.id.localeCompare(b.id));
@@ -76,271 +78,372 @@
 
         window.addEventListener('beforeunload', () => localStorage.removeItem(prefix + myId));
 
-        // ==========================================
-        // 3. AMBIENTE 3D
-        // ==========================================
-        const scene = new THREE.Scene();
-        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 10000);
+        // ── CENA / CÂMERA / RENDERER ───────────────────────────────────────
+        const scene    = new THREE.Scene();
+        const camera   = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 1, 10000);
         const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setSize(innerWidth, innerHeight);
+        renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.05;
         document.body.appendChild(renderer.domElement);
 
-        // POST-PROCESSING BLOOM (Iluminação e Profundidade)
-        const composer = new EffectComposer(renderer);
+        const composer  = new EffectComposer(renderer);
         composer.addPass(new RenderPass(scene, camera));
-        const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
+        const bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 1.3, 0.55, 0.72);
         composer.addPass(bloomPass);
 
-        const orbs = {};
-        const colorGreen = new THREE.Color(0x00ff55), colorRed = new THREE.Color(0xff1100);
+        const RADIUS = 130;            // raio dos mundos
+        const CORE_RADIUS = 68;        // raio do núcleo (matéria recebida do outro mundo)
+        const orbs = {};               // id -> grupo
 
-        // FEIXE (AMPULHETA ORIGINAL DO VÍDEO)
-        const beamCount = 20000;
-        const beamGeo = new THREE.BufferGeometry();
-        const beamPos = new Float32Array(beamCount * 3), beamCol = new Float32Array(beamCount * 3), beamPh = new Float32Array(beamCount);
-        for(let i=0; i<beamCount; i++) {
-            beamPh[i] = Math.random();
-            const c = i >= beamCount/2 ? colorRed : colorGreen;
-            beamCol[i*3]=c.r; beamCol[i*3+1]=c.g; beamCol[i*3+2]=c.b;
+        // ── GERA OS CONTINENTES COMO PARTÍCULAS (a partir da textura) ───────
+        // Vetores unitários (direções na esfera) onde existe terra firme.
+        let continentDirs = null;
+
+        function buildContinentDirs(img) {
+            const cw = 1024, ch = 512;
+            const cv = document.createElement('canvas');
+            cv.width = cw; cv.height = ch;
+            const cx = cv.getContext('2d');
+            cx.drawImage(img, 0, 0, cw, ch);
+            let data;
+            try { data = cx.getImageData(0, 0, cw, ch).data; }
+            catch(e) { return buildFallbackDirs(); } // CORS bloqueou a leitura
+
+            const dirs = [];
+            const target = 11000;
+            let attempts = 0;
+            while (dirs.length/3 < target && attempts < target*60) {
+                attempts++;
+                const u = Math.random();
+                const y = 2*Math.random() - 1;     // cos(phi) -> distribuição uniforme
+                const phi = Math.acos(y);
+                const theta = 2*Math.PI*u;
+                const px = Math.min(cw-1, Math.floor(u*cw));
+                const py = Math.min(ch-1, Math.floor((phi/Math.PI)*ch));
+                const r = data[(py*cw + px)*4] / 255;
+                // earth_specular: oceano = claro (especular), continente = escuro
+                if (r < 0.35) {
+                    const s = Math.sin(phi);
+                    dirs.push(s*Math.cos(theta), y, s*Math.sin(theta));
+                }
+            }
+            return new Float32Array(dirs);
         }
-        beamGeo.setAttribute('position', new THREE.BufferAttribute(beamPos, 3));
-        beamGeo.setAttribute('color', new THREE.BufferAttribute(beamCol, 3));
-        const beam = new THREE.Points(beamGeo, new THREE.PointsMaterial({ size: 5.5, map: dustTexture, blending: THREE.AdditiveBlending, transparent: true, opacity: 0.35, vertexColors: true, depthWrite: false }));
-        scene.add(beam);
 
-        // ==========================================
-        // 4. CRIADOR DA ORBE (FIOS DE ENERGIA TIPO ESFERA.HTML)
-        // ==========================================
-        function createEnergyThreads(radius, count, isCore) {
-            const group = new THREE.Group();
-            group.userData = { isCore, radius, threads: [] };
+        // Caso a textura não carregue/leia: esfera de partículas uniforme.
+        function buildFallbackDirs() {
+            const n = 9000, dirs = new Float32Array(n*3);
+            for (let i=0;i<n;i++){
+                const y = 2*Math.random()-1, phi=Math.acos(y), th=2*Math.PI*Math.random();
+                const s = Math.sin(phi);
+                dirs[i*3]=s*Math.cos(th); dirs[i*3+1]=y; dirs[i*3+2]=s*Math.sin(th);
+            }
+            return dirs;
+        }
 
-            const material = new THREE.LineBasicMaterial({
-                color: isCore ? 0xff1100 : 0x3cff82,
-                transparent: true,
-                opacity: isCore ? 0.9 : 0.6,
-                blending: THREE.AdditiveBlending,
-                depthWrite: false,
+        const textureLoader = new THREE.TextureLoader();
+        textureLoader.crossOrigin = 'Anonymous';
+        textureLoader.load(
+            'https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/planets/earth_specular_2048.jpg',
+            tex => { continentDirs = buildContinentDirs(tex.image); },
+            undefined,
+            () => { continentDirs = buildFallbackDirs(); }
+        );
+
+        // ── CONSTRÓI UM MUNDO (continentes em partículas + atmosfera) ──────
+        function makeEarthPoints(colorHex, radius) {
+            const n = continentDirs.length/3;
+            const pos = new Float32Array(n*3);
+            for (let i=0;i<n;i++){
+                const jit = radius * (0.985 + Math.random()*0.03);
+                pos[i*3]   = continentDirs[i*3]   * jit;
+                pos[i*3+1] = continentDirs[i*3+1] * jit;
+                pos[i*3+2] = continentDirs[i*3+2] * jit;
+            }
+            const g = new THREE.BufferGeometry();
+            g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+            const m = new THREE.PointsMaterial({
+                size: 2.4, map: dustTexture, color: new THREE.Color(colorHex),
+                blending: THREE.AdditiveBlending, depthWrite: false,
+                transparent: true, opacity: 1.0
             });
+            return new THREE.Points(g, m);
+        }
 
-            for (let i = 0; i < count; i++) {
-                const geometry = new THREE.BufferGeometry();
-                const pos = new Float32Array(25 * 3); // Histórico de rastro da linha
-                geometry.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-                
-                const line = new THREE.Line(geometry, material.clone());
-                line.frustumCulled = false; // Como o bounding box muda muito, evitamos sumir
-                group.add(line);
-
-                group.userData.threads.push({
-                    line: line,
-                    age: 0,
-                    life: Math.random() * 150 + 50,
-                    r: radius + (Math.random() * (isCore? 4:16) - (isCore?2:8)),
-                    theta: Math.random() * Math.PI * 2,
-                    phi: Math.acos(Math.random() * 2 - 1),
-                    freq1: Math.random() * 3.5 + 1.5,
-                    freq2: Math.random() * 3.5 + 1.5,
-                    speedMultiplier: Math.random() * 0.015 + 0.005,
-                    history: []
+        function createAtmosphere(rMin, rMax, count, colorHex) {
+            const geometry  = new THREE.BufferGeometry();
+            const positions = new Float32Array(count*3);
+            const pData = [];
+            for (let i=0;i<count;i++){
+                pData.push({
+                    r: rMin + (rMax-rMin)*Math.cbrt(Math.random()),
+                    theta: Math.random()*2*Math.PI,
+                    phi:   Math.acos(Math.random()*2-1),
+                    speed: Math.random()*0.6 + 0.15,
+                    wobble: Math.random()*Math.PI*2
                 });
             }
-            return group;
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            const m = new THREE.PointsMaterial({
+                size: 3.0, map: dustTexture, color: new THREE.Color(colorHex),
+                blending: THREE.AdditiveBlending, depthWrite: false,
+                transparent: true, opacity: 0.55
+            });
+            const mesh = new THREE.Points(geometry, m);
+            mesh.userData.pData = pData;
+            mesh.userData.rMax = rMax;
+            return mesh;
         }
 
-        function createOrbGroup() {
+        // drag = deslocamento físico (espaço local), opcional. Partículas mais
+        // externas (soltas) reagem mais ao balanço da janela do que as internas.
+        function updateAtmosphere(mesh, drag) {
+            const positions = mesh.geometry.attributes.position.array;
+            const pData = mesh.userData.pData;
+            const rMax = mesh.userData.rMax || 1;
+            const dx = drag ? drag.x : 0, dy = drag ? drag.y : 0, dz = drag ? drag.z : 0;
+            for (let i=0;i<pData.length;i++){
+                const p = pData[i];
+                p.theta  += p.speed * 0.003;
+                p.wobble += 0.03;
+                const r = p.r + Math.sin(p.wobble)*4;
+                const s = Math.sin(p.phi);
+                const loose = p.r / rMax;   // 0 (interno) .. 1 (externo)
+                positions[i*3]   = r*s*Math.cos(p.theta) + dx*loose;
+                positions[i*3+1] = r*Math.cos(p.phi)     + dy*loose;
+                positions[i*3+2] = r*s*Math.sin(p.theta) + dz*loose;
+            }
+            mesh.geometry.attributes.position.needsUpdate = true;
+        }
+
+        function createOrb(colorHex, coreColorHex) {
             const g = new THREE.Group();
-            g.add(createEnergyThreads(130, 400, false)); // Casca Principal de Energia 
-            g.add(createEnergyThreads(70, 200, true));   // Núcleo (Filamentos densos)
+            g.add(makeEarthPoints(colorHex, RADIUS));         // [0] continentes (casca)
+            g.add(createAtmosphere(74, 150, 1600, colorHex)); // [1] atmosfera
+
+            // [2] núcleo: planeta menor da COR OPOSTA (matéria vinda do outro mundo)
+            const core = makeEarthPoints(coreColorHex, CORE_RADIUS);
+            core.visible = false;
+            core.scale.setScalar(0.001);
+            g.add(core);
+
+            // [3] atmosfera do núcleo
+            const coreAtmo = createAtmosphere(8, CORE_RADIUS-4, 700, coreColorHex);
+            coreAtmo.visible = false;
+            coreAtmo.scale.setScalar(0.001);
+            g.add(coreAtmo);
+
             return g;
         }
 
-        // ==========================================
-        // 5. MOTOR FÍSICO DE RENDERIZAÇÃO
-        // ==========================================
+        // ── SISTEMA DE PARTÍCULAS DA CONEXÃO (o "sifão") ───────────────────
+        const CONN_COUNT = 20000;
+        const connGeo = new THREE.BufferGeometry();
+        const connPos = new Float32Array(CONN_COUNT*3);
+        const connCol = new Float32Array(CONN_COUNT*3);
+        const connDir = []; // direção fixa por partícula (de onde sai na esfera)
+        const connPhase = new Float32Array(CONN_COUNT);
+        const connFwd   = new Uint8Array(CONN_COUNT); // 1 = c1->c2, 0 = c2->c1
+        for (let i=0;i<CONN_COUNT;i++){
+            const y = 2*Math.random()-1, phi=Math.acos(y), th=2*Math.PI*Math.random();
+            const s = Math.sin(phi);
+            connDir.push(new THREE.Vector3(s*Math.cos(th), y, s*Math.sin(th)));
+            connPhase[i] = Math.random();
+            connFwd[i]   = (i % 2);            // metade em cada sentido
+        }
+        connGeo.setAttribute('position', new THREE.BufferAttribute(connPos, 3));
+        connGeo.setAttribute('color',    new THREE.BufferAttribute(connCol, 3));
+        const connMat = new THREE.PointsMaterial({
+            size: 2.2, map: dustTexture, vertexColors: true,
+            blending: THREE.AdditiveBlending, depthWrite: false,
+            transparent: true, opacity: 0.95
+        });
+        const connection = new THREE.Points(connGeo, connMat);
+        connection.frustumCulled = false;
+        connection.visible = false;
+        scene.add(connection);
+
+        // Buffers reaproveitados (evita alocar por frame)
+        const _c1 = new THREE.Vector3(), _c2 = new THREE.Vector3();
+        const _p1 = new THREE.Vector3(), _p2 = new THREE.Vector3();
+        const _straight = new THREE.Vector3(), _axis = new THREE.Vector3(), _pos = new THREE.Vector3();
+        const _colA = new THREE.Color(), _colB = new THREE.Color(), _col = new THREE.Color();
+        // temporários da física de balanço
+        const _wv = new THREE.Vector3(), _tmp = new THREE.Vector3();
+        const _localDrag = new THREE.Vector3(), _invQ = new THREE.Quaternion();
+
+        function updateConnection(orbA, orbB, progress, time, colorA, colorB) {
+            _c1.copy(orbA.position);
+            _c2.copy(orbB.position);
+            _colA.set(colorA); _colB.set(colorB);
+
+            const flowSpeed = 0.18;
+            for (let i = 0; i < CONN_COUNT; i++) {
+                const dir = connDir[i];
+                let u = connPhase[i] + time * flowSpeed;
+                u = u - Math.floor(u);
+
+                // fwd = c1→c2 (cor A, ex: verde indo ao núcleo vermelho)
+                // !fwd = c2→c1 (cor B, ex: vermelho indo ao núcleo verde)
+                const fwd = connFwd[i] === 1;
+
+                // pp: 0 = saída (casca de origem), 1 = chegada (núcleo de destino)
+                const pp = u;
+
+                // Endpoints: casca da origem → núcleo do destino
+                if (fwd) {
+                    _p1.copy(_c1).addScaledVector(dir, RADIUS);       // casca de orbA
+                    _p2.copy(_c2).addScaledVector(dir, CORE_RADIUS);  // núcleo de orbB
+                } else {
+                    _p1.copy(_c2).addScaledVector(dir, RADIUS);       // casca de orbB
+                    _p2.copy(_c1).addScaledVector(dir, CORE_RADIUS);  // núcleo de orbA
+                }
+
+                // Straight = interpolação linear entre os dois endpoints
+                _straight.copy(_p1).lerp(_p2, pp);
+
+                // Axis = interpolação entre os centros, na mesma direção de viagem
+                const srcC = fwd ? _c1 : _c2;
+                const dstC = fwd ? _c2 : _c1;
+                _axis.copy(srcC).lerp(dstC, pp);
+
+                // Pinch cria o afunilamento no meio (ampulheta) — mais aberto nas extremidades
+                const pinch = 1.0 - 0.82 * Math.sin(pp * Math.PI);
+                _pos.copy(_straight).sub(_axis).multiplyScalar(pinch).add(_axis);
+
+                // Fade-in ao emergir da casca da esfera de origem; visível até o núcleo
+                const dSrc = _pos.distanceTo(srcC);
+                const fSrc = THREE.MathUtils.smoothstep(dSrc, RADIUS - 4, RADIUS + 24);
+
+                // Cintilação
+                const tw = 0.55 + 0.45 * Math.sin(u * 20.0 + connPhase[i] * 28.0);
+                const a  = fSrc * progress * tw;
+
+                connPos[i*3]   = _pos.x;
+                connPos[i*3+1] = _pos.y;
+                connPos[i*3+2] = _pos.z;
+
+                // Cor da origem mantida em TODO o trajeto (verde chega verde ao núcleo vermelho)
+                _col.copy(fwd ? _colA : _colB).multiplyScalar(a);
+                connCol[i*3]   = _col.r;
+                connCol[i*3+1] = _col.g;
+                connCol[i*3+2] = _col.b;
+            }
+            connGeo.attributes.position.needsUpdate = true;
+            connGeo.attributes.color.needsUpdate = true;
+        }
+
+        // ── LOOP PRINCIPAL ─────────────────────────────────────────────────
         function animate() {
             requestAnimationFrame(animate);
             updateStatus();
-            const wins = getWins();
+
             const time = Date.now() * 0.001;
+
+            // câmera mapeada para o espaço da tela (multi-janela)
+            camera.position.x = window.screenX + innerWidth/2;
+            camera.position.y = -(window.screenY + innerHeight/2);
+            camera.position.z = (innerHeight/2) / Math.tan(THREE.MathUtils.degToRad(22.5));
+
+            if (!continentDirs) { composer.render(); return; } // espera a textura
+
+            const wins = getWins();
             const connected = wins.length >= 2;
-
-            camera.position.x = window.screenX + window.innerWidth/2;
-            camera.position.y = -(window.screenY + window.innerHeight/2);
-            camera.position.z = (window.innerHeight/2) / Math.tan(THREE.MathUtils.degToRad(22.5));
-
             let connectionElapsed = 0;
-            if(connected) connectionElapsed = (Date.now() - Math.max(wins[0].birth, wins[1].birth)) / 1000;
+            if (connected)
+                connectionElapsed = (Date.now() - Math.max(wins[0].birth, wins[1].birth)) / 1000;
 
-            for (let id in orbs) if (!wins.find(w => w.id === id)) { scene.remove(orbs[id]); delete orbs[id]; }
+            // remove mundos de janelas que sumiram
+            for (const id in orbs)
+                if (!wins.find(w => w.id === id)) { scene.remove(orbs[id]); delete orbs[id]; }
 
             wins.forEach((w, idx) => {
-                if(!orbs[w.id]) { orbs[w.id] = createOrbGroup(); scene.add(orbs[w.id]); }
+                const colorHex     = COLORS[idx % COLORS.length];
+                const coreColorHex = COLORS[(idx + 1) % COLORS.length]; // cor do OUTRO mundo
+                if (!orbs[w.id]) { orbs[w.id] = createOrb(colorHex, coreColorHex); scene.add(orbs[w.id]); }
                 const group = orbs[w.id];
-                
-                // Mola Elástica (Inércia da Janela)
-                if(!group.userData.p) group.userData.p = new THREE.Vector3(w.x, -w.y, 0);
-                const d = new THREE.Vector3(w.x, -w.y, 0).sub(group.userData.p);
-                group.userData.p.add(d.multiplyScalar(0.12));
+
+                // mantém as cores coerentes mesmo se a ordem mudar
+                group.children[0].material.color.set(colorHex);
+                group.children[1].material.color.set(colorHex);
+                group.children[2].material.color.set(coreColorHex);
+                group.children[3].material.color.set(coreColorHex);
+                // posição com inércia (suaviza o arrasto da janela)
+                if (!group.userData.p) group.userData.p = new THREE.Vector3(w.x, -w.y, 0);
+                const target = new THREE.Vector3(w.x, -w.y, 0);
+                group.userData.p.add(target.sub(group.userData.p).multiplyScalar(0.12));
                 group.position.copy(group.userData.p);
 
-                // Rotação física de toda a estrutura no sentido horário
-                const rotationSpeed = -time * 0.3;
-                group.rotation.set(0, rotationSpeed, 0); 
+                // rotação do planeta
+                group.rotation.set(0.35, time*0.18, 0);
 
-                const localCam = camera.position.clone();
-                group.worldToLocal(localCam); localCam.normalize();
+                // ── FÍSICA DE BALANÇO ──────────────────────────────────────
+                // velocidade da janela no espaço do mundo (a tela tem Y invertido)
+                _wv.set( THREE.MathUtils.clamp(w.vx || 0, -120, 120),
+                        -THREE.MathUtils.clamp(w.vy || 0, -120, 120), 0);
+                if (!group.userData.drag) {
+                    group.userData.drag  = new THREE.Vector3();
+                    group.userData.dragV = new THREE.Vector3();
+                }
+                const drag = group.userData.drag, dragV = group.userData.dragV;
+                // mola amortecida: as partículas ficam para trás do movimento e voltam balançando
+                _tmp.copy(_wv).multiplyScalar(-1.3).sub(drag);
+                dragV.addScaledVector(_tmp, 0.18); // rigidez
+                dragV.multiplyScalar(0.86);        // amortecimento
+                drag.add(dragV);
+                // converte o deslocamento para o espaço local do grupo (que gira)
+                _invQ.copy(group.quaternion).invert();
+                _localDrag.copy(drag).applyQuaternion(_invQ);
 
-                const cVx = Math.max(-80, Math.min(80, w.vx || 0));
-                const cVy = Math.max(-80, Math.min(80, w.vy || 0));
+                // planeta sólido sofre só um leve parallax; a atmosfera balança bastante
+                group.children[0].position.copy(_localDrag).multiplyScalar(0.12);
+                updateAtmosphere(group.children[1], _localDrag);
 
-                // Compensa a rotação do grupo para que a inércia (deleia) não fique de lado
-                const theta = group.rotation.y;
-                const localVxX = cVx * Math.cos(-theta);
-                const localVxZ = cVx * Math.sin(-theta);
-                const localVyY = cVy;
-
-                group.children.forEach((mesh, index) => {
-                    const tGroup = group.children[index]; 
-                    if (!tGroup || !group.userData) return;
-                    // Como dividimos orbs em 2 layers, pegamos a ref salva no array `threads`
-                    const isCore = mesh.parent.children.indexOf(mesh) === 1;
-
-                    let easeProgress = 1.0;
-                    if(isCore) {
-                        let cp = Math.max(0, Math.min(1, (connectionElapsed - 1.5) / 2.0));
-                        easeProgress = 1 - Math.pow(1-cp, 3);
-                        mesh.visible = connected && cp > 0;
-                        mesh.scale.setScalar(Math.max(0.001, easeProgress));
-                    }
-                });
-
-                // Atualizando e desenhando fisicamente os fios de plasma igual ao esfera.html
-                [group.children[0], group.children[1]].forEach((layerGroup) => {
-                    if(!layerGroup || !layerGroup.userData || !layerGroup.userData.threads) return;
-                    const threads = layerGroup.userData.threads;
-                    const isCore = layerGroup.userData.isCore;
-                    const maxRadius = layerGroup.userData.radius;
-
-                    // Ajuste dinâmico de Cores baseado na janela (idx 0 ou 1):
-                    // Janela 0: Casca Verde (0x3cff82) e Núcleo Vermelho (0xff1100)
-                    // Janela 1: Casca Vermelha (0xff1100) e Núcleo Verde (0x3cff82)
-                    const targetColor = isCore ? (idx === 0 ? 0xff1100 : 0x3cff82) : (idx === 0 ? 0x3cff82 : 0xff1100);
-
-                    for (let t of threads) {
-                        t.line.material.color.setHex(targetColor);
-                        t.age++;
-                        if (t.age > t.life) {
-                            t.age = 0;
-                            t.life = Math.random() * 150 + 50; 
-                            t.r = maxRadius + (Math.random() * (isCore?4:16) - (isCore?2:8)); 
-                            t.theta = Math.random() * Math.PI * 2;
-                            t.phi = Math.acos(Math.random() * 2 - 1);
-                            t.history = [];
-                        }
-
-                        // Algoritmo do plasma escorrendo orgânico
-                        const rTime = time * 0.3;
-                        t.theta += Math.sin(t.phi * t.freq1 + rTime) * t.speedMultiplier;
-                        t.phi += Math.cos(t.theta * t.freq2 - rTime) * t.speedMultiplier;
-
-                        if (t.phi < 0.01) t.phi = 0.01;
-                        if (t.phi > Math.PI - 0.01) t.phi = Math.PI - 0.01;
-
-                        // Cartesianas sobre a esfera
-                        let bx = t.r * Math.sin(t.phi) * Math.cos(t.theta);
-                        let by = t.r * Math.cos(t.phi);
-                        let bz = t.r * Math.sin(t.phi) * Math.sin(t.theta);
-
-                        // FÍSICA CINÉTICA (Aplica "Geleia" da Inercia da Janela ao Raio)
-                        const len = Math.sqrt(bx*bx + by*by + bz*bz);
-                        let nxRaw = bx/len, nyRaw = by/len, nzRaw = bz/len;
-                        const dotV = nxRaw*localVxX + nyRaw*localVyY + nzRaw*localVxZ;
-                        const kinetic = (-dotV) * (isCore ? 0.15 : 0.4);
-                        
-                        bx += nxRaw * kinetic - (localVxX * (isCore ? 0.1 : 0.25));
-                        by += nyRaw * kinetic + (localVyY * (isCore ? 0.1 : 0.25));
-                        bz += nzRaw * kinetic - (localVxZ * (isCore ? 0.1 : 0.25));
-
-                        t.history.push({ x: bx, y: by, z: bz });
-                        if (t.history.length > 25) t.history.shift();
-
-                        // Renderiza o rastro no BufferGeometry
-                        if (t.history.length > 1) {
-                            const pos = t.line.geometry.attributes.position;
-                            let avgZ = 0, avgX = 0, avgY = 0;
-                            for (let i = 0; i < 25; i++) {
-                                // Preenche os não utilizados com o último conhecido pra esconder falhas
-                                const pt = i < t.history.length ? t.history[i] : t.history[t.history.length - 1];
-                                pos.setXYZ(i, pt.x, pt.y, pt.z);
-                                if (i < t.history.length) {
-                                    avgZ += pt.z;
-                                    avgX += pt.x;
-                                    avgY += pt.y;
-                                }
-                            }
-                            avgZ /= t.history.length;
-                            avgX /= t.history.length;
-                            avgY /= t.history.length;
-                            pos.needsUpdate = true;
-
-                            // Alpha Pulse Animation e Fresnel (Oco)
-                            let lifePhase = Math.sin((t.age / t.life) * Math.PI); 
-                            let alpha = (isCore ? 0.9 : 0.6) * lifePhase;
-
-                            // Apaga a casca em TODA a região cilíndrica visual (frente E trás) ocupada pelo núcleo.
-                            // Como usamos AdditiveBlending, a parte de trás da casca também precisa sumir para não misturar cores.
-                            if (connected && !isCore) {
-                                const dotCamera = avgX * localCam.x + avgY * localCam.y + avgZ * localCam.z;
-                                
-                                // Removida a trava (dotCamera > 0) para o corte vazar a esfera inteira
-                                const lenSq = avgX * avgX + avgY * avgY + avgZ * avgZ;
-                                const dist = Math.sqrt(Math.max(0, lenSq - (dotCamera * dotCamera)));
-                                
-                                // O núcleo tem raio 70. Expandimos o corte para 90 para compensar o Bloom.
-                                if (dist < 90) {
-                                    // Tudo abaixo de dist 75 fica com opacidade 0 (branco/vazio absoluto).
-                                    // De 75 a 90, ele faz um fade suave para não deixar a borda serrilhada.
-                                    const fadeFactor = Math.max(0, (dist - 75) / 15);
-                                    alpha *= fadeFactor * fadeFactor; 
-                                }
-                            }
-
-                            t.line.material.opacity = Math.max(0, alpha);
-                        }
-                    }
-                });
+                // núcleo da cor oposta cresce quando os mundos estão conectados,
+                // indicando a troca/acúmulo de partículas vindas do outro mundo
+                const core = group.children[2];
+                const coreAtmo = group.children[3];
+                if (connected) {
+                    // núcleo começa a aparecer após 1 s de conexão e leva 3.5 s para crescer totalmente
+                    const cp = Math.max(0, Math.min(1, (connectionElapsed - 1.0) / 3.5));
+                    const ep = 1 - Math.pow(1 - cp, 3);          // ease-out suave
+                    const s  = Math.max(0.001, ep);
+                    core.visible = true;     core.scale.setScalar(s);     core.rotation.y = -time*0.4;
+                    core.position.copy(_localDrag).multiplyScalar(0.18);
+                    coreAtmo.visible = true; coreAtmo.scale.setScalar(s);
+                    updateAtmosphere(coreAtmo, _localDrag);
+                } else {
+                    core.visible = false;     core.scale.setScalar(0.001);
+                    coreAtmo.visible = false; coreAtmo.scale.setScalar(0.001);
+                }
             });
 
-            // BEAM (AMPULHETA DE PARTÍCULAS ORIGINAL)
-            if(connected) {
-                const w1 = wins[0], w2 = wins[1], p1 = orbs[w1.id].userData.p, p2 = orbs[w2.id].userData.p;
-                const maxT = Math.min(1, connectionElapsed / 1.5);
-                for(let i=0; i<beamCount; i++) {
-                    let t = (time * 0.6 + beamPh[i]) % 1;
-                    if(t > maxT) { beamPos[i*3] = 99999; continue; }
-                    const isB = i >= beamCount/2, s = isB ? p2 : p1, tg = isB ? p1 : p2;
-                    const phi = Math.acos(1 - 2 * (i / beamCount)), th = Math.PI * (1 + Math.sqrt(5)) * i;
-                    const sX = s.x + 130 * Math.sin(phi) * Math.cos(th), sY = s.y + 130 * Math.sin(phi) * Math.sin(th), sZ = 130 * Math.cos(phi);
-                    const tX = tg.x + 70 * Math.sin(phi) * Math.cos(th), tY = tg.y + 70 * Math.sin(phi) * Math.sin(th), tZ = 70 * Math.cos(phi);
-                    let px = sX + (tX-sX)*t, py = sY + (tY-sY)*t, pz = sZ + (tZ-sZ)*t;
-                    const turb = Math.sin(t*Math.PI)*35, ang = time*2.5 + i*0.05;
-                    px += Math.cos(ang)*turb; py += Math.sin(ang)*turb;
-                    const axX = s.x + (tg.x-s.x)*t, axY = s.y + (tg.y-s.y)*t, pinch = 1 - 0.97*Math.sin(t*Math.PI);
-                    let pnx = axX + (px-axX)*pinch, pny = axY + (py-axY)*pinch, pnz = pz*pinch;
-                    const hR = 8*Math.sin(t*Math.PI), d = Math.sqrt((pnx-axX)**2 + (pny-axY)**2);
-                    if(d>0) { px = pnx + (pnx-axX)/d*hR; py = pny + (pny-axY)/d*hR; pz = pnz; }
-                    else { px = pnx + Math.cos(ang)*hR; py = pny + Math.sin(ang)*hR; pz = pnz; }
-                    beamPos[i*3]=px; beamPos[i*3+1]=py; beamPos[i*3+2]=pz;
-                }
-                beamGeo.attributes.position.needsUpdate = true; beam.visible = true;
-            } else beam.visible = false;
+            // ── O SIFÃO: partículas fluindo entre os dois mundos ───────────
+            if (connected && orbs[wins[0].id] && orbs[wins[1].id]) {
+                const progress = Math.max(0.02, Math.min(1, connectionElapsed / 1.5));
+                updateConnection(
+                    orbs[wins[0].id], orbs[wins[1].id],
+                    progress, time,
+                    COLORS[0], COLORS[1]
+                );
+                connection.visible = true;
+            } else {
+                connection.visible = false;
+            }
 
-            composer.render(scene, camera);
+            composer.render();
         }
+
         animate();
-        window.addEventListener('resize', () => { renderer.setSize(window.innerWidth, window.innerHeight); camera.aspect = window.innerWidth/window.innerHeight; camera.updateProjectionMatrix(); });
+
+        window.addEventListener('resize', () => {
+            renderer.setSize(innerWidth, innerHeight);
+            camera.aspect = innerWidth/innerHeight;
+            camera.updateProjectionMatrix();
+            composer.setSize(innerWidth, innerHeight);
+        });
     </script>
 </body>
 </html>
