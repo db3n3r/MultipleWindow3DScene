@@ -169,7 +169,85 @@
                 blending: THREE.AdditiveBlending, depthWrite: false,
                 transparent: true, opacity: 1.0
             });
-            return new THREE.Points(g, m);
+            const points = new THREE.Points(g, m);
+            // ── Estado da deformação elástica ──────────────────────────────
+            // base = posição em repouso; norm = direção unitária na esfera (para
+            // saber onde a partícula está em relação ao eixo do movimento);
+            // off = deslocamento atual; weights = soltura orgânica por partícula.
+            const base = pos.slice();
+            const norm = new Float32Array(n*3);
+            const weights = new Float32Array(n);
+            for (let i=0;i<n;i++){
+                const k=i*3;
+                const len = Math.hypot(base[k], base[k+1], base[k+2]) || 1;
+                norm[k]=base[k]/len; norm[k+1]=base[k+1]/len; norm[k+2]=base[k+2]/len;
+                weights[i] = 0.7 + Math.random()*0.6; // 0.7..1.3
+            }
+            points.userData.base    = base;
+            points.userData.norm    = norm;
+            points.userData.off     = new Float32Array(n*3);
+            points.userData.weights = weights;
+            points.userData.radius  = radius;
+            return points;
+        }
+
+        // ── DEFORMAÇÃO ELÁSTICA DA ESFERA ──────────────────────────────────
+        // Recebe W = vetor de "balanço" (direção do movimento × energia). A
+        // deformação é ASSIMÉTRICA, como a inércia de um corpo mole: SÓ o
+        // hemisfério OPOSTO ao movimento reage — a matéria é "jogada para trás".
+        //   • back = quanto a partícula olha para o lado oposto ao movimento;
+        //   • a traseira incha/estica para trás → bojo de inércia;
+        //   • a frente e o equador quase não se mexem.
+        // Como W é uma MOLA que passa do ponto ao parar, a forma treme (gelatina).
+        const STRETCH = 3.4;   // intensidade da expansão traseira (lado oposto ao mov.)
+        const BULGE   = 0.2;  // 0 = só estica p/ trás (cauda) · 1 = só incha radialmente
+        const BACKPOW = 10.5;   // ↑ concentra mais no polo traseiro (cauda mais "fina")
+        const LEAN    = 0.85;  // arrasto uniforme leve de toda a casca
+        const FOLLOW  = 0.09;  // suavização da superfície (quanto < , mais "mole")
+        function updateShellElastic(mesh, W, scale) {
+            const arr  = mesh.geometry.attributes.position.array;
+            const base = mesh.userData.base;
+            const norm = mesh.userData.norm;
+            const off  = mesh.userData.off;
+            const wgt  = mesh.userData.weights;
+            const n    = wgt.length;
+            // W chega no espaço do GRUPO. Converte para o espaço LOCAL deste mesh
+            // (a casca tem rotação identidade; o núcleo gira sozinho). Assim a casca
+            // e o núcleo deformam exatamente na MESMA direção do balanço.
+            _mq.copy(mesh.quaternion).invert();
+            _wl.copy(W).applyQuaternion(_mq);
+            const wlen = _wl.length();
+            const st = STRETCH*scale, ln = LEAN*scale;
+            // eixo unitário do movimento (se quase parado, alvo ~0 → relaxa à esfera)
+            const ux = wlen>1e-4 ? _wl.x/wlen : 0;
+            const uy = wlen>1e-4 ? _wl.y/wlen : 0;
+            const uz = wlen>1e-4 ? _wl.z/wlen : 0;
+            for (let i=0;i<n;i++){
+                const k=i*3, wi=wgt[i];
+                // projeção no eixo do movimento: +1 = frente (sentido do movimento),
+                // -1 = traseira (lado OPOSTO ao movimento).
+                const along = norm[k]*ux + norm[k+1]*uy + norm[k+2]*uz;
+                // SÓ o hemisfério oposto reage (along<0). 0 na frente/equador..1 atrás.
+                const back = along < 0 ? Math.pow(-along, BACKPOW) : 0;
+                const amt  = back * wlen * st * wi;
+                // direção do bojo: mistura entre "para trás" (-u) e "inchar p/ fora"
+                // (radial +norm) → expansão concentrada ATRÁS do movimento.
+                const dirx = -ux*(1-BULGE) + norm[k]  *BULGE;
+                const diry = -uy*(1-BULGE) + norm[k+1]*BULGE;
+                const dirz = -uz*(1-BULGE) + norm[k+2]*BULGE;
+                // alvo = bojo traseiro + leve arrasto uniforme (toda a casca recua um pouco)
+                const tx = dirx*amt - ux*wlen*ln*wi;
+                const ty = diry*amt - uy*wlen*ln*wi;
+                const tz = dirz*amt - uz*wlen*ln*wi;
+                // superfície segue o alvo com leve atraso → tremor de gelatina
+                off[k]   += (tx - off[k]  )*FOLLOW;
+                off[k+1] += (ty - off[k+1])*FOLLOW;
+                off[k+2] += (tz - off[k+2])*FOLLOW;
+                arr[k]   = base[k]   + off[k];
+                arr[k+1] = base[k+1] + off[k+1];
+                arr[k+2] = base[k+2] + off[k+2];
+            }
+            mesh.geometry.attributes.position.needsUpdate = true;
         }
 
         function createAtmosphere(rMin, rMax, count, colorHex) {
@@ -272,7 +350,8 @@
         const _colA = new THREE.Color(), _colB = new THREE.Color(), _col = new THREE.Color();
         // temporários da física de balanço
         const _wv = new THREE.Vector3(), _tmp = new THREE.Vector3();
-        const _localDrag = new THREE.Vector3(), _invQ = new THREE.Quaternion();
+        const _localDrag = new THREE.Vector3(), _wl = new THREE.Vector3();
+        const _invQ = new THREE.Quaternion(), _mq = new THREE.Quaternion();
 
         function updateConnection(orbA, orbB, progress, time, colorA, colorB) {
             _c1.copy(orbA.position);
@@ -370,36 +449,44 @@
                 group.children[1].material.color.set(colorHex);
                 group.children[2].material.color.set(coreColorHex);
                 group.children[3].material.color.set(coreColorHex);
-                // posição com inércia (suaviza o arrasto da janela)
+                // ── posição com inércia (mantém o orbe centrado na janela) ──
+                // Guarda o passo deste frame (quanto o orbe andou na tela) = velocidade.
                 if (!group.userData.p) group.userData.p = new THREE.Vector3(w.x, -w.y, 0);
-                const target = new THREE.Vector3(w.x, -w.y, 0);
-                group.userData.p.add(target.sub(group.userData.p).multiplyScalar(0.12));
-                group.position.copy(group.userData.p);
+                const cur = group.userData.p;
+                const _px = cur.x, _py = cur.y;
+                cur.x += (w.x  - cur.x)*0.12;
+                cur.y += (-w.y - cur.y)*0.12;
+                group.position.copy(cur);
+                const sdx = cur.x - _px, sdy = cur.y - _py; // velocidade do orbe (mundo)
 
                 // rotação do planeta
                 group.rotation.set(0.35, time*0.18, 0);
 
-                // ── FÍSICA DE BALANÇO ──────────────────────────────────────
-                // velocidade da janela no espaço do mundo (a tela tem Y invertido)
-                _wv.set( THREE.MathUtils.clamp(w.vx || 0, -120, 120),
-                        -THREE.MathUtils.clamp(w.vy || 0, -120, 120), 0);
-                if (!group.userData.drag) {
-                    group.userData.drag  = new THREE.Vector3();
-                    group.userData.dragV = new THREE.Vector3();
-                }
-                const drag = group.userData.drag, dragV = group.userData.dragV;
-                // mola amortecida: as partículas ficam para trás do movimento e voltam balançando
-                _tmp.copy(_wv).multiplyScalar(-1.3).sub(drag);
-                dragV.addScaledVector(_tmp, 0.18); // rigidez
-                dragV.multiplyScalar(0.86);        // amortecimento
-                drag.add(dragV);
-                // converte o deslocamento para o espaço local do grupo (que gira)
+                // ── MOLA VETORIAL DE BALANÇO (W) ───────────────────────────
+                // W é a "energia de balanço". A velocidade da janela dá um IMPULSO
+                // em W, e uma mola fraca o traz de volta ao repouso BEM devagar,
+                // com amortecimento alto → a esfera estica e fica tremendo por
+                // vários segundos. É o que controla quão DEMORADO é o efeito.
+                //   WSTIFF ↓ = retorno mais lento (oscila mais devagar)
+                //   WDAMP  → perto de 1 = treme por MUITO mais tempo
+                //   VGAIN  = força do impulso (o quanto a velocidade vira deformação)
+                //   WCLAMP = limite da deformação (evita explodir)
+                const WSTIFF = 0.004, WDAMP = 0.985, VGAIN = 0.45, WCLAMP = 82;
+                if (!group.userData.W){ group.userData.W = new THREE.Vector3(); group.userData.Wv = new THREE.Vector3(); }
+                const Wv = group.userData.Wv, Wvec = group.userData.W;
+                // velocidade da janela no espaço LOCAL do grupo (que gira)
                 _invQ.copy(group.quaternion).invert();
-                _localDrag.copy(drag).applyQuaternion(_invQ);
+                _wv.set(sdx, sdy, 0).applyQuaternion(_invQ);
+                // impulso pela velocidade + mola lenta de volta a 0 + amortecimento alto
+                Wv.addScaledVector(_wv, VGAIN);     // chute do movimento
+                Wv.addScaledVector(Wvec, -WSTIFF);  // mola fraca puxando ao repouso
+                Wv.multiplyScalar(WDAMP);           // amortecimento (alto = demora)
+                Wvec.add(Wv);
+                Wvec.clampLength(0, WCLAMP);
 
-                // planeta sólido sofre só um leve parallax; a atmosfera balança bastante
-                group.children[0].position.copy(_localDrag).multiplyScalar(0.12);
-                updateAtmosphere(group.children[1], _localDrag);
+                // casca: deforma de acordo com a posição de cada partícula no eixo W
+                updateShellElastic(group.children[0], Wvec, 1.0);
+                updateAtmosphere(group.children[1], Wvec);
 
                 // núcleo da cor oposta cresce quando os mundos estão conectados,
                 // indicando a troca/acúmulo de partículas vindas do outro mundo
@@ -411,9 +498,9 @@
                     const ep = 1 - Math.pow(1 - cp, 3);          // ease-out suave
                     const s  = Math.max(0.001, ep);
                     core.visible = true;     core.scale.setScalar(s);     core.rotation.y = -time*0.4;
-                    core.position.copy(_localDrag).multiplyScalar(0.18);
+                    updateShellElastic(core, Wvec, 0.7);
                     coreAtmo.visible = true; coreAtmo.scale.setScalar(s);
-                    updateAtmosphere(coreAtmo, _localDrag);
+                    updateAtmosphere(coreAtmo, Wvec);
                 } else {
                     core.visible = false;     core.scale.setScalar(0.001);
                     coreAtmo.visible = false; coreAtmo.scale.setScalar(0.001);
