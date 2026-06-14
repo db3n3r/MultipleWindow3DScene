@@ -11,7 +11,7 @@
 </p>
 
 <div align="center">
-  <img width="100%" src="https://github.com/user-attachments/assets/ceee6b65-b659-47ab-a58d-e1f2de87015c" alt="Demonstração do Projeto Multi-Janelas com Three.js" />
+  <img width="100%" src="https://github.com/user-attachments/assets/4b1254c8-e47b-42c8-866b-dd6fba4067a7" alt="Demonstração do Projeto Multi-Janelas com Three.js" />
 </div>
 
 <br>
